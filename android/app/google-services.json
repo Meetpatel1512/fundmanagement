@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "456362860927",
+    "project_id": "fundmanagement-3c371",
+    "storage_bucket": "fundmanagement-3c371.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:456362860927:android:0e1861186ca98855fa3a4a",
+        "android_client_info": {
+          "package_name": "com.example.fund_management_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "456362860927-skc8hlpo260qrartcioj5ljbvd63vc34.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.fund_management_app",
+            "certificate_hash": "18597fd444d6353da6e693004e350e42cd797bba"
+          }
+        },
+        {
+          "client_id": "456362860927-0utlorggjj4338681dieo9r34fr04imr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCYaJ3nCnrJE2zsuARflfw97TJRwzk26-g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "456362860927-0utlorggjj4338681dieo9r34fr04imr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "456362860927-2k8uoe07njo8tuugelqdmiueugo744hg.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.fundManagementApp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
