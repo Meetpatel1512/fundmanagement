@@ -5,6 +5,8 @@ import 'package:fund_management_app/utils/app_constants.dart';
 import 'package:fund_management_app/utils/custom_colors.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fund_management_app/screens/add_members_to_group_screen.dart';
+import 'package:fund_management_app/screens/add_expense_screen.dart'; // Import the new screen
+import 'package:fund_management_app/services/auth_service.dart';
 
 class GroupDetailsScreen extends StatefulWidget {
   final GroupModel group;
@@ -15,9 +17,34 @@ class GroupDetailsScreen extends StatefulWidget {
   State<GroupDetailsScreen> createState() => _GroupDetailsScreenState();
 }
 
-class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
+class _GroupDetailsScreenState extends State<GroupDetailsScreen> with SingleTickerProviderStateMixin {
   bool _showFabOptions = false;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final AuthService _authService = AuthService();
+  String? _creatorUsername;
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _fetchCreatorUsername();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchCreatorUsername() async {
+    final userModel = await _authService.getUserData(widget.group.creatorUid);
+    if (mounted) {
+      setState(() {
+        _creatorUsername = userModel?.username ?? 'Unknown User';
+      });
+    }
+  }
 
   void _showToast(String message, Color backgroundColor) {
     Fluttertoast.showToast(
@@ -37,7 +64,6 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     });
   }
 
-  // Helper to get icon for category AND its color
   Map<String, dynamic> _getCategoryIconAndColor(String categoryName) {
     return AppConstants.groupCategories
         .firstWhere(
@@ -54,96 +80,119 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.primaryBackground,
-      appBar: AppBar(
-        title: Text(widget.group.groupName),
-        backgroundColor: AppColors.accentGreen,
-        foregroundColor: AppColors.textDark,
-        elevation: 0,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+      body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  categoryData['icon'],
-                  color: categoryData['color'], // Use the color from categoryData
-                  size: 30,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  'Category: ${widget.group.groupCategory}',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textDark,
+            // Custom Top Bar Section
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 15.0),
+              color: AppColors.primaryBackground,
+              child: Row(
+                children: [
+                  // Back button
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_ios, color: AppColors.textDark),
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Group Name: ${widget.group.groupName}',
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Creator: ${widget.group.creatorUid} ${isAdmin ? '(You - Admin)' : ''}',
-              style: TextStyle(
-                fontSize: 18,
-                color: AppColors.textDark.withOpacity(0.8),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Created On: ${widget.group.createdAt.day}/${widget.group.createdAt.month}/${widget.group.createdAt.year}',
-              style: TextStyle(
-                fontSize: 16,
-                color: AppColors.textDark.withOpacity(0.7),
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Members:',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark,
-              ),
-            ),
-            const SizedBox(height: 10),
-            if (widget.group.members.isEmpty)
-              Text(
-                'No members in this group.',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: AppColors.hintGrey,
-                ),
-              )
-            else
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: widget.group.members.length,
-                itemBuilder: (context, index) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4.0),
-                    child: Text(
-                      '- ${widget.group.members[index]}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: AppColors.textDark,
-                      ),
+                  const SizedBox(width: 10),
+                  // Category Icon
+                  Icon(
+                    categoryData['icon'],
+                    color: categoryData['color'],
+                    size: 38,
+                  ),
+                  const SizedBox(width: 15),
+                  // Group Name and Creator
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.group.groupName,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textDark,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          'Created by ${_creatorUsername ?? 'Loading...'}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.hintGrey,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                  );
-                },
+                  ),
+                  // Delete Icon (remain on the right)
+                  IconButton(
+                    icon: Icon(
+                      Icons.delete_forever,
+                      color: isAdmin ? AppColors.errorRed : AppColors.hintGrey.withOpacity(0.5),
+                      size: 28,
+                    ),
+                    onPressed: () {
+                      if (isAdmin) {
+                        _showToast("Delete group functionality not implemented yet.", AppColors.hintGrey);
+                        // TODO: Implement actual delete group functionality here
+                      } else {
+                        _showToast('You are not the admin of this group and cannot delete it.', AppColors.errorRed);
+                      }
+                    },
+                    tooltip: isAdmin ? 'Delete group' : 'Only group admin can delete',
+                  ),
+                ],
               ),
+            ),
+            // Tab Bar
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
+              decoration: BoxDecoration(
+                color: AppColors.textLight,
+                borderRadius: BorderRadius.circular(15.0),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.buttonShadow.withOpacity(0.1),
+                    spreadRadius: 1,
+                    blurRadius: 3,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: TabBar(
+                controller: _tabController,
+                indicatorSize: TabBarIndicatorSize.tab,
+                indicator: BoxDecoration(
+                  borderRadius: BorderRadius.circular(15.0),
+                  color: AppColors.accentGreen,
+                ),
+                labelColor: AppColors.textDark,
+                unselectedLabelColor: AppColors.hintGrey,
+                labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 16),
+                tabs: const [
+                  Tab(text: 'Expense'),
+                  Tab(text: 'Summary'),
+                ],
+              ),
+            ),
+            // Tab Bar View
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  // Expense Tab Content
+                  _buildExpenseTabContent(),
+                  // Summary Tab Content
+                  _buildSummaryTabContent(),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -151,6 +200,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
         mainAxisAlignment: MainAxisAlignment.end,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          // Add Expense Button
           AnimatedOpacity(
             opacity: _showFabOptions ? 1.0 : 0.0,
             duration: const Duration(milliseconds: 200),
@@ -161,9 +211,13 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                 child: FloatingActionButton.extended(
                   onPressed: () {
                     if (_showFabOptions) {
-                      _showToast("Add Expense button tapped!", AppColors.accentGreen);
-                      _toggleFabOptions();
-                      // TODO: Navigate to Add Expense Screen
+                      _toggleFabOptions(); // Close options before navigating
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AddExpenseScreen(group: widget.group), // Navigate to AddExpenseScreen
+                        ),
+                      );
                     }
                   },
                   label: const Text('Add Expense', style: TextStyle(color: AppColors.textDark)),
@@ -177,6 +231,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
               ),
             ),
           ),
+          // Add Members Button (only visible/tappable if current user is admin)
           if (isAdmin)
             AnimatedOpacity(
               opacity: _showFabOptions ? 1.0 : 0.0,
@@ -208,6 +263,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                 ),
               ),
             ),
+          // Main Plus FAB
           FloatingActionButton(
             onPressed: _toggleFabOptions,
             backgroundColor: AppColors.accentGreen,
@@ -222,6 +278,51 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Placeholder content for Expense tab
+  Widget _buildExpenseTabContent() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'July 2025', // Placeholder for current month
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 15),
+          Center(
+            child: Column(
+              children: [
+                const SizedBox(height: 50),
+                Icon(Icons.receipt_long, size: 80, color: AppColors.hintGrey.withOpacity(0.5)),
+                const SizedBox(height: 20),
+                Text(
+                  'No expenses yet. Click the + button to add one!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: AppColors.hintGrey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Placeholder content for Summary tab
+  Widget _buildSummaryTabContent() {
+    return const Center(
+      child: Text(
+        'Summary Screen Content',
+        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textDark),
       ),
     );
   }
