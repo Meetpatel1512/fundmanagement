@@ -7,7 +7,7 @@ import 'package:fund_management_app/widgets/custom_text_field.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
 class CreateGroupScreen extends StatefulWidget {
-  const CreateGroupScreen({super.key});
+  const CreateGroupScreen({Key? key}) : super(key: key);
   @override
   State<CreateGroupScreen> createState() => _CreateGroupScreenState();
 }
@@ -15,11 +15,14 @@ class CreateGroupScreen extends StatefulWidget {
 class _CreateGroupScreenState extends State<CreateGroupScreen> {
   final TextEditingController _groupNameController = TextEditingController();
   final TextEditingController _memberEmailController = TextEditingController();
+  final TextEditingController _initialContributionController = TextEditingController(text: '2000.00'); // Default
+  final TextEditingController _minimumBalanceController = TextEditingController(text: '100.00'); // Default
+
   final List<String> _members = [];
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   final GroupService _groupService = GroupService();
-  String _selectedCategory = AppConstants.groupCategories[0]['name']; // Default category
+  String _selectedCategory = AppConstants.groupCategories[0]['name'];
 
   void _addMember() {
     String email = _memberEmailController.text.trim();
@@ -39,13 +42,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     }
 
     setState(() {
-      _isLoading = true;
-    });
-
-    setState(() {
       _members.add(email);
       _memberEmailController.clear();
-      _isLoading = false;
     });
     _showToast("$email added.", AppColors.successGreen);
   }
@@ -68,6 +66,23 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         return;
       }
 
+      final double? initialContribution = double.tryParse(_initialContributionController.text);
+      final double? minimumBalance = double.tryParse(_minimumBalanceController.text);
+
+      if (initialContribution == null || initialContribution <= 0) {
+        _showToast("Please enter a valid initial contribution amount.", AppColors.errorRed);
+        return;
+      }
+      if (minimumBalance == null || minimumBalance < 0) {
+        _showToast("Please enter a valid minimum balance threshold.", AppColors.errorRed);
+        return;
+      }
+      if (minimumBalance > initialContribution) {
+        _showToast("Minimum balance cannot be greater than initial contribution.", AppColors.errorRed);
+        return;
+      }
+
+
       setState(() {
         _isLoading = true;
       });
@@ -76,6 +91,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         _groupNameController.text.trim(),
         _members,
         _selectedCategory,
+        initialContribution, // Pass initial contribution
+        minimumBalance, // Pass minimum balance
       );
 
       setState(() {
@@ -104,6 +121,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   void dispose() {
     _groupNameController.dispose();
     _memberEmailController.dispose();
+    _initialContributionController.dispose();
+    _minimumBalanceController.dispose();
     super.dispose();
   }
 
@@ -182,7 +201,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                               }
                             });
                           },
-                          selectedColor: (category['color'] as Color).withOpacity(0.7), // Use category color
+                          selectedColor: (category['color'] as Color).withOpacity(0.7),
                           backgroundColor: AppColors.textLight,
                           labelStyle: TextStyle(
                             color: _selectedCategory == category['name']
@@ -195,14 +214,14 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                           avatar: Icon(
                             category['icon'],
                             color: _selectedCategory == category['name']
-                                ? AppColors.textDark // TextDark for selected icon for contrast
-                                : (category['color'] as Color), // Use category color for unselected icon
+                                ? AppColors.textDark
+                                : (category['color'] as Color),
                           ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10.0),
                             side: BorderSide(
                               color: _selectedCategory == category['name']
-                                  ? (category['color'] as Color) // Use category color for selected border
+                                  ? (category['color'] as Color)
                                   : AppColors.borderColor,
                               width: 1.5,
                             ),
@@ -212,6 +231,71 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       );
                     },
                   ),
+                ),
+                const SizedBox(height: 20),
+                // Initial Contribution Amount
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Initial Contribution (per member)',
+                    style: TextStyle(
+                      color: AppColors.textDark.withOpacity(0.8),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                CustomTextField(
+                  controller: _initialContributionController,
+                  labelText: 'Amount in Rupees (e.g., 2000)',
+                  hintText: '2000.00',
+                  keyboardType: TextInputType.number,
+                  enabled: true,
+                  readOnly: false,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Initial contribution is required.';
+                    }
+                    if (double.tryParse(value) == null || double.parse(value) <= 0) {
+                      return 'Please enter a valid positive amount.';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 20),
+                // Minimum Balance Threshold
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Minimum Balance Threshold',
+                    style: TextStyle(
+                      color: AppColors.textDark.withOpacity(0.8),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                CustomTextField(
+                  controller: _minimumBalanceController,
+                  labelText: 'Amount in Rupees (e.g., 100)',
+                  hintText: '100.00',
+                  keyboardType: TextInputType.number,
+                  enabled: true,
+                  readOnly: false,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Minimum balance is required.';
+                    }
+                    if (double.tryParse(value) == null || double.parse(value) < 0) {
+                      return 'Please enter a valid non-negative amount.';
+                    }
+                    if (double.tryParse(value)! > double.tryParse(_initialContributionController.text)!) {
+                      return 'Min balance cannot be > initial contribution.';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 20),
                 Align(

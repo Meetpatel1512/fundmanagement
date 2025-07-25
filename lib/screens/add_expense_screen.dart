@@ -4,10 +4,12 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:fund_management_app/models/group_model.dart';
+import 'package:fund_management_app/services/group_service.dart'; // Import GroupService
 import 'package:fund_management_app/utils/app_constants.dart';
 import 'package:fund_management_app/utils/custom_colors.dart';
 import 'package:fund_management_app/widgets/custom_button.dart';
 import 'package:fund_management_app/widgets/custom_text_field.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
 
 enum SplitType { equally, unequally }
 
@@ -33,10 +35,14 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   File? _billImage;
   bool _isLoading = false;
 
+  final GroupService _groupService = GroupService(); // Instantiate GroupService
+  final FirebaseAuth _auth = FirebaseAuth.instance; // Instantiate FirebaseAuth
+
   @override
   void initState() {
     super.initState();
     _dateController.text = DateFormat('dd/MM/yyyy').format(_selectedDate);
+    // Initialize selected members for unequal split to all members by default
     _selectedMembersForUnequalSplit.addAll(widget.group.members);
   }
 
@@ -114,9 +120,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         );
   }
 
-  void _addExpense() {
+  void _addExpense() async {
     if (_formKey.currentState!.validate()) {
-      if (double.tryParse(_amountController.text) == null || double.parse(_amountController.text) <= 0) {
+      final double? amount = double.tryParse(_amountController.text);
+      if (amount == null || amount <= 0) {
         _showToast("Please enter a valid amount.", AppColors.errorRed);
         return;
       }
@@ -126,38 +133,62 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         return;
       }
 
+      final String? currentUserEmail = _auth.currentUser?.email;
+      if (currentUserEmail == null) {
+        _showToast("User not logged in. Please log in to add expense.", AppColors.errorRed);
+        return;
+      }
+
       setState(() {
         _isLoading = true;
       });
 
-      String splitDetails = '';
+      Map<String, double> shares = {};
       if (_splitType == SplitType.equally) {
-        splitDetails = 'Equally among all members.';
+        // Split equally among ALL group members
+        double sharePerMember = amount / widget.group.members.length;
+        for (String memberEmail in widget.group.members) {
+          shares[memberEmail] = sharePerMember;
+        }
       } else {
-        splitDetails = 'Unequally among: ${_selectedMembersForUnequalSplit.join(', ')}. ';
-        double amount = double.parse(_amountController.text);
-        if (_selectedMembersForUnequalSplit.isNotEmpty) {
-          double splitAmount = amount / _selectedMembersForUnequalSplit.length;
-          splitDetails += 'Each gets: ₹${splitAmount.toStringAsFixed(2)}.';
+        // Split equally among SELECTED members
+        if (_selectedMembersForUnequalSplit.isEmpty) {
+          _showToast("Please select at least one member for unequal split.", AppColors.errorRed);
+          setState(() { _isLoading = false; });
+          return;
+        }
+        double sharePerSelectedMember = amount / _selectedMembersForUnequalSplit.length;
+        for (String memberEmail in _selectedMembersForUnequalSplit) {
+          shares[memberEmail] = sharePerSelectedMember;
+        }
+        // Members NOT selected owe 0, but still need to be in shares map if they were initially there for calculation
+        // This is important for balance adjustments. Set to 0 if not selected for this split.
+        for (String memberEmail in widget.group.members) {
+          if (!_selectedMembersForUnequalSplit.contains(memberEmail)) {
+            shares[memberEmail] = 0.0;
+          }
         }
       }
 
-      _showToast(
-        'Expense Added!\n'
-            'Description: ${_descriptionController.text}\n'
-            'Amount: ₹${_amountController.text}\n'
-            'Date: ${_dateController.text}\n'
-            'Category: $_selectedCategory\n'
-            'Split: $splitDetails\n'
-            'Bill Image: ${_billImage != null ? "Yes" : "No"}',
-        AppColors.successGreen,
+      bool success = await _groupService.addExpense(
+        widget.group.groupId,
+        _descriptionController.text.trim(),
+        amount,
+        _selectedDate,
+        _selectedCategory,
+        currentUserEmail, // Current logged in user is the payer
+        _splitType.toString().split('.').last, // 'equally' or 'unequally'
+        shares,
+        _billImage,
       );
 
       setState(() {
         _isLoading = false;
-        // Optionally clear fields after adding
       });
-      // TODO: Implement actual expense storage to Firestore
+
+      if (success && mounted) {
+        Navigator.pop(context); // Go back to GroupDetailsScreen
+      }
     }
   }
 
@@ -325,7 +356,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // Split Options (Changed from RadioListTile to segmented control)
+                // Split Options
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -354,6 +385,9 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                           onTap: () {
                             setState(() {
                               _splitType = SplitType.equally;
+                              // When switching to equally, ensure all group members are selected by default for the split calculation
+                              _selectedMembersForUnequalSplit.clear();
+                              _selectedMembersForUnequalSplit.addAll(widget.group.members);
                             });
                           },
                           child: Container(
@@ -381,6 +415,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                           onTap: () {
                             setState(() {
                               _splitType = SplitType.unequally;
+                              // When switching to unequally, clear selection to force user to choose
+                              _selectedMembersForUnequalSplit.clear();
                             });
                           },
                           child: Container(

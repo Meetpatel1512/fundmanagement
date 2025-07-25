@@ -5,6 +5,7 @@ class AppConstants {
   static const String appName = 'Fund Management App';
   static const String usersCollection = 'fundmanagement';
   static const String groupsCollection = 'groups';
+  static const String expensesCollection = 'expenses'; // New: Firebase collection name for expenses
 
   // Group Categories with their display name, icon, and COLOR
   static const List<Map<String, dynamic>> groupCategories = [
@@ -14,7 +15,7 @@ class AppConstants {
     {'name': 'Other', 'icon': Icons.category, 'color': Color(0xFF9E9E9E)}, // Grey (hintGrey)
   ];
 
-  // New: Expense Categories with their display name, icon, and COLOR
+  // Expense Categories with their display name, icon, and COLOR
   static const List<Map<String, dynamic>> expenseCategories = [
     {'name': 'Food', 'icon': Icons.fastfood, 'color': Color(0xFFF44336)}, // Red
     {'name': 'Drinks', 'icon': Icons.local_drink, 'color': Color(0xFF00BCD4)}, // Cyan

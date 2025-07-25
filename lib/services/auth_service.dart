@@ -1,8 +1,8 @@
-import 'dart:io'; // For File operations
+import 'dart:io';
 import 'dart:ui';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart'; // For Firebase Storage
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:fund_management_app/models/user_model.dart';
 import 'package:fund_management_app/utils/app_constants.dart';
@@ -12,7 +12,7 @@ import 'package:fund_management_app/utils/custom_colors.dart';
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance; // Firebase Storage instance
+  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   User? getCurrentUser() {
     return _auth.currentUser;
@@ -20,28 +20,22 @@ class AuthService {
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  // Register a new user with email and password
   Future<User?> registerWithEmailPassword(String email, String password) async {
     try {
       UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
-
       User? user = userCredential.user;
       if (user != null) {
-        // Store user data in Firestore, including the password
-        // WARNING: Storing plain text or easily reversible passwords directly
-        // in your database is a security risk. Firebase Authentication
-        // already handles secure password hashing and storage.
         await _firestore.collection(AppConstants.usersCollection).doc(user.uid).set(
           UserModel(
             uid: user.uid,
             email: user.email!,
-            password: password, // Storing the password as requested
+            password: password,
             createdAt: DateTime.now(),
-            username: null, // Initially null
-            profileImageUrl: null, // Initially null
+            username: email.split('@')[0], // Auto-set username from email for new registrations
+            profileImageUrl: null,
           ).toMap(),
         );
         _showToast(AppMessages.registrationSuccess, AppColors.successGreen);
@@ -64,7 +58,6 @@ class AuthService {
     }
   }
 
-  // Sign in a user with email and password
   Future<User?> signInWithEmailPassword(String email, String password) async {
     try {
       UserCredential userCredential = await _auth.signInWithEmailAndPassword(
@@ -94,7 +87,6 @@ class AuthService {
     }
   }
 
-  // Send password reset email
   Future<void> sendPasswordResetEmail(String email) async {
     try {
       await _auth.sendPasswordResetEmail(email: email);
@@ -112,7 +104,6 @@ class AuthService {
     }
   }
 
-  // Update user profile (username and profile image URL)
   Future<void> updateUserProfile({
     String? username,
     File? profileImageFile,
@@ -126,7 +117,6 @@ class AuthService {
     String? imageUrl;
     if (profileImageFile != null) {
       try {
-        // Upload image to Firebase Storage
         final storageRef = _storage.ref().child('profile_pictures').child('${user.uid}.jpg');
         final uploadTask = storageRef.putFile(profileImageFile);
         final snapshot = await uploadTask.whenComplete(() {});
@@ -138,27 +128,21 @@ class AuthService {
     }
 
     try {
-      // Get current user data from Firestore
       DocumentSnapshot userDoc = await _firestore.collection(AppConstants.usersCollection).doc(user.uid).get();
       UserModel currentUserModel = UserModel.fromFirestore(userDoc);
 
-      // Create updated UserModel
       UserModel updatedUserModel = UserModel(
         uid: currentUserModel.uid,
         email: currentUserModel.email,
-        password: currentUserModel.password, // Keep existing password
+        password: currentUserModel.password,
         createdAt: currentUserModel.createdAt,
-        username: username ?? currentUserModel.username, // Update if provided, otherwise keep existing
-        profileImageUrl: imageUrl ?? currentUserModel.profileImageUrl, // Update if provided, otherwise keep existing
+        username: username ?? currentUserModel.username,
+        profileImageUrl: imageUrl ?? currentUserModel.profileImageUrl,
       );
-
-      // Update user data in Firestore
       await _firestore.collection(AppConstants.usersCollection).doc(user.uid).set(
         updatedUserModel.toMap(),
-        SetOptions(merge: true), // Use merge to update only specified fields
+        SetOptions(merge: true),
       );
-
-      // Also update Firebase Auth profile display name and photo URL
       if (username != null) {
         await user.updateDisplayName(username);
       }
@@ -172,7 +156,6 @@ class AuthService {
     }
   }
 
-  // Fetch user data from Firestore
   Future<UserModel?> getUserData(String uid) async {
     try {
       DocumentSnapshot doc = await _firestore.collection(AppConstants.usersCollection).doc(uid).get();
@@ -181,21 +164,40 @@ class AuthService {
       }
       return null;
     } catch (e) {
-      print('Error fetching user data: $e'); // For debugging
+      print('Error fetching user data: $e');
       return null;
     }
   }
 
-  // Reload user to check email verification status (removed as email verification fields are removed)
+  // New: Get username by email
+  Future<String?> getUsernameByEmail(String email) async {
+    try {
+      // Find user document where email matches
+      final querySnapshot = await _firestore
+          .collection(AppConstants.usersCollection)
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        final userData = querySnapshot.docs.first.data();
+        return userData['username'] as String?;
+      }
+      return null;
+    } catch (e) {
+      print('Error fetching username by email: $e');
+      return null;
+    }
+  }
+
+
   Future<void> reloadUser() async {
     final user = _auth.currentUser;
     if (user != null) {
       await user.reload();
-      // No need to update Firestore for email verification status as it's removed from UserModel
     }
   }
 
-  // Sign out the current user
   Future<void> signOut() async {
     try {
       await _auth.signOut();
@@ -205,7 +207,6 @@ class AuthService {
     }
   }
 
-  // Helper function to show toast messages
   void _showToast(String message, Color backgroundColor) {
     Fluttertoast.showToast(
       msg: message,

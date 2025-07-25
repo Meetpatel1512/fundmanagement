@@ -6,6 +6,7 @@ import 'package:fund_management_app/screens/profile_screen.dart';
 import 'package:fund_management_app/screens/create_group_screen.dart';
 import 'package:fund_management_app/screens/update_profile_screen.dart';
 import 'package:fund_management_app/screens/group_details_screen.dart';
+import 'package:fund_management_app/screens/initial_contribution_screen.dart';
 import 'package:fund_management_app/services/auth_service.dart';
 import 'package:fund_management_app/services/group_service.dart';
 import 'package:fund_management_app/utils/app_constants.dart';
@@ -14,7 +15,7 @@ import 'package:fund_management_app/widgets/custom_button.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({Key? key}) : super(key: key);
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -134,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return AppConstants.groupCategories
         .firstWhere(
           (cat) => cat['name'] == categoryName,
-          orElse: () => {'name': 'Other', 'icon': Icons.category, 'color': AppColors.hintGrey}, // Default values
+          orElse: () => {'name': 'Other', 'icon': Icons.category, 'color': AppColors.hintGrey},
         );
   }
 
@@ -195,6 +196,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
               List<GroupModel> groups = snapshot.data!;
               final String? currentLoggedInUserUid = _firebaseAuth.currentUser?.uid;
+              final String? currentLoggedInUserEmail = _firebaseAuth.currentUser?.email;
+
 
               return ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -202,7 +205,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 itemBuilder: (context, index) {
                   GroupModel group = groups[index];
                   bool isGroupAdmin = currentLoggedInUserUid == group.creatorUid;
-                  final categoryData = _getCategoryIconAndColor(group.groupCategory); // Get icon and color
+
+                  // Get current user's balance for this group
+                  double currentUserBalance = 0.0;
+                  if (currentLoggedInUserEmail != null) {
+                    currentUserBalance = group.memberBalances[currentLoggedInUserEmail] ?? 0.0;
+                  }
+
+                  // Check if initial contribution is met
+                  bool hasMetInitialContribution = currentUserBalance >= group.initialContributionAmount;
+
+                  final categoryData = _getCategoryIconAndColor(group.groupCategory);
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 15),
@@ -210,13 +223,26 @@ class _HomeScreenState extends State<HomeScreen> {
                     elevation: 3,
                     color: AppColors.cardBackground,
                     child: InkWell(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => GroupDetailsScreen(group: group),
-                          ),
-                        );
+                      // IMPORTANT: Make navigation await and trigger setState to ensure rebuild on return
+                      onTap: () async {
+                        if (hasMetInitialContribution) {
+                          await Navigator.push( // Await the push
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => GroupDetailsScreen(group: group),
+                            ),
+                          );
+                        } else {
+                          await Navigator.push( // Await the push
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => InitialContributionScreen(group: group),
+                            ),
+                          );
+                        }
+                        // This setState will trigger a rebuild of the HomeScreen's StreamBuilder
+                        // which will fetch the latest group data (including balances) from Firestore.
+                        setState(() { });
                       },
                       borderRadius: BorderRadius.circular(15),
                       child: Padding(
@@ -224,10 +250,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            // Category Icon on the left with dynamic color
+                            // Category Icon
                             Icon(
                               categoryData['icon'],
-                              color: categoryData['color'], // Use the color from categoryData
+                              color: categoryData['color'],
                               size: 40,
                             ),
                             const SizedBox(width: 15),
@@ -252,9 +278,34 @@ class _HomeScreenState extends State<HomeScreen> {
                                       color: AppColors.hintGrey.withOpacity(0.7),
                                     ),
                                   ),
+                                  const SizedBox(height: 8),
+
+                                  // Display User's Balance for the group
+                                  Text(
+                                    'My Balance: ₹${currentUserBalance.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: currentUserBalance >= 0 ? AppColors.successGreen : AppColors.errorRed,
+                                    ),
+                                  ),
+                                  // Display reminder if initial contribution is not met
+                                  if (!hasMetInitialContribution)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4.0),
+                                      child: Text(
+                                        'Initial Pay Pending: ₹${group.initialContributionAmount.toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.errorRed,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
+                            // Delete Icon
                             IconButton(
                               icon: Icon(
                                 Icons.delete_forever,
