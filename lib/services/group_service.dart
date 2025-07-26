@@ -34,8 +34,10 @@ class GroupService {
       }
 
       Map<String, double> balances = {};
+      Map<String, bool> paymentStatus = {}; // Initialize new map
       for (String memberEmail in members) {
         balances[memberEmail] = 0.0;
+        paymentStatus[memberEmail] = false; // Set initial payment status to false
       }
 
       DocumentReference docRef = await _firestore.collection(AppConstants.groupsCollection).add(
@@ -49,6 +51,7 @@ class GroupService {
           initialContributionAmount: initialContributionAmount,
           minimumBalanceThreshold: minimumBalanceThreshold,
           memberBalances: balances,
+          initialPaymentStatus: paymentStatus, // Store initial status
         ).toMap(),
       );
       await docRef.update({'groupId': docRef.id});
@@ -99,15 +102,21 @@ class GroupService {
       Map<String, double> existingBalances = Map<String, double>.from(
         (groupDoc.data() as Map<String, dynamic>)['memberBalances'] ?? {},
       );
+      Map<String, bool> existingPaymentStatus = Map<String, bool>.from(
+        (groupDoc.data() as Map<String, dynamic>)['initialPaymentStatus'] ?? {},
+      );
 
       Map<String, double> updatedBalances = {};
+      Map<String, bool> updatedPaymentStatus = {};
       for (String memberEmail in newMembers) {
         updatedBalances[memberEmail] = existingBalances[memberEmail] ?? 0.0;
+        updatedPaymentStatus[memberEmail] = existingPaymentStatus[memberEmail] ?? false; // New members start as false
       }
 
       await _firestore.collection(AppConstants.groupsCollection).doc(groupId).update({
         'members': newMembers,
         'memberBalances': updatedBalances,
+        'initialPaymentStatus': updatedPaymentStatus, // Update initial payment status map
       });
       _showToast('Members updated successfully!', AppColors.successGreen);
       return true;
@@ -117,7 +126,13 @@ class GroupService {
     }
   }
 
-  Future<bool> updateMemberBalanceForGroup(String groupId, String userEmail, double newBalance) async {
+  // Modified: updateMemberBalanceForGroup now can optionally mark initial payment done
+  Future<bool> updateMemberBalanceForGroup(
+      String groupId,
+      String userEmail,
+      double newBalance, {
+      bool markInitialPaymentDone = false, // New optional parameter
+      }) async {
     User? currentUser = _auth.currentUser;
     if (currentUser == null || currentUser.email != userEmail) {
       _showToast('Authentication error. Please log in as the correct user.', AppColors.errorRed);
@@ -135,11 +150,17 @@ class GroupService {
 
         Map<String, dynamic> data = groupDoc.data() as Map<String, dynamic>;
         Map<String, double> currentBalances = Map<String, double>.from(data['memberBalances'] ?? {});
+        Map<String, bool> currentPaymentStatus = Map<String, bool>.from(data['initialPaymentStatus'] ?? {});
 
-        currentBalances[userEmail] = newBalance; // Directly set new balance
+        currentBalances[userEmail] = newBalance;
+
+        if (markInitialPaymentDone) {
+          currentPaymentStatus[userEmail] = true;
+        }
 
         transaction.update(groupRef, {
           'memberBalances': currentBalances,
+          'initialPaymentStatus': currentPaymentStatus, // Update status
         });
       });
       _showToast('Balance updated for group!', AppColors.successGreen);
@@ -150,16 +171,15 @@ class GroupService {
     }
   }
 
-  // Modified: Add an expense to a group and update member balances based on new pooled fund logic
   Future<bool> addExpense(
       String groupId,
       String description,
       double amount,
       DateTime date,
       String category,
-      String paidBy, // User who paid the total amount
+      String paidBy,
       String splitType,
-      Map<String, double> shares, // Who owes what
+      Map<String, double> shares,
       File? billImageFile,
       ) async {
     User? currentUser = _auth.currentUser;
@@ -187,7 +207,6 @@ class GroupService {
       DocumentReference expenseDocRef = _firestore.collection(AppConstants.expensesCollection).doc();
 
       await _firestore.runTransaction((transaction) async {
-        // 1. Get current group data
         DocumentSnapshot groupDoc = await transaction.get(groupRef);
         if (!groupDoc.exists) {
           throw Exception('Group not found!');
@@ -195,24 +214,22 @@ class GroupService {
         Map<String, dynamic> groupData = groupDoc.data() as Map<String, dynamic>;
         Map<String, double> currentBalances = Map<String, double>.from(groupData['memberBalances'] ?? {});
 
-        // --- NEW POOLED FUND BALANCE LOGIC ---
-        // 1. Deduct the total expense amount from the payer's balance.
-        //    This means the payer's individual share of the overall pool is reduced by the amount they spent.
-        currentBalances[paidBy] = (currentBalances[paidBy] ?? 0.0) - amount;
-
-        // 2. For each member who is part of the split: add back their specific share amount to their balance.
-        //    This means their individual share of the overall pool is then adjusted back by what they "repaid"
-        //    for their portion of the expense.
+        // --- POOLED FUND (SUBTRACTION-ONLY) BALANCE LOGIC ---
+        // For each member who is part of the split: their balance is REDUCED by their share.
+        // This includes the payer, who also has their share deducted.
         shares.forEach((memberEmail, shareAmount) {
-          currentBalances[memberEmail] = (currentBalances[memberEmail] ?? 0.0) + shareAmount;
+          currentBalances[memberEmail] = (currentBalances[memberEmail] ?? 0.0) - shareAmount;
         });
-        // --- END NEW POOLED FUND BALANCE LOGIC ---
+
+        // The payer's role in this model is simply to record the expense;
+        // their balance is NOT directly impacted by the total amount paid, only by their share.
+        // The total group balance (sum of member balances) will correctly reflect total - expense.
+        // This is why we remove the previous line that added 'amount' to paidBy's balance.
+        // --- END POOLED FUND (SUBTRACTION-ONLY) BALANCE LOGIC ---
 
 
-        // 3. Update group document with new balances
         transaction.update(groupRef, {'memberBalances': currentBalances});
 
-        // 4. Create new expense document
         ExpenseModel newExpense = ExpenseModel(
           expenseId: expenseDocRef.id,
           groupId: groupId,
@@ -275,7 +292,7 @@ class GroupService {
       if (e.code == 'permission-denied') {
         _showToast('Permission denied. You are not authorized to delete this group.', AppColors.errorRed);
       } else {
-        _showToast('Failed to delete group: ${e.message}', AppColors.errorRed);
+      _showToast('Failed to delete group: ${e.message}', AppColors.errorRed);
       }
       return false;
     } catch (e) {

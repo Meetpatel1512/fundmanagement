@@ -7,9 +7,10 @@ class GroupModel {
   final List<String> members;
   final DateTime createdAt;
   final String groupCategory;
-  final double initialContributionAmount; // New: Mandatory amount each member must pay
-  final double minimumBalanceThreshold; // New: Minimum balance required
-  final Map<String, double> memberBalances; // New: Tracks current balance for each member (email -> amount)
+  final double initialContributionAmount;
+  final double minimumBalanceThreshold;
+  final Map<String, double> memberBalances;
+  final Map<String, bool> initialPaymentStatus; // New: Tracks if initial payment is done (email -> bool)
 
   GroupModel({
     required this.groupId,
@@ -18,9 +19,10 @@ class GroupModel {
     required this.members,
     required this.createdAt,
     required this.groupCategory,
-    this.initialContributionAmount = 0.0, // Default value
-    this.minimumBalanceThreshold = 0.0, // Default value
-    this.memberBalances = const {}, // Initialize with empty map
+    this.initialContributionAmount = 0.0,
+    this.minimumBalanceThreshold = 0.0,
+    this.memberBalances = const {},
+    this.initialPaymentStatus = const {}, // Initialize with empty map
   });
 
   factory GroupModel.fromFirestore(DocumentSnapshot doc) {
@@ -40,6 +42,12 @@ class GroupModel {
             ) ??
             {},
       ),
+      initialPaymentStatus: Map<String, bool>.from(
+        (data['initialPaymentStatus'] as Map<dynamic, dynamic>?)?.map(
+              (key, value) => MapEntry(key as String, value as bool),
+            ) ??
+            {},
+      ),
     );
   }
 
@@ -53,6 +61,7 @@ class GroupModel {
       'initialContributionAmount': initialContributionAmount,
       'minimumBalanceThreshold': minimumBalanceThreshold,
       'memberBalances': memberBalances,
+      'initialPaymentStatus': initialPaymentStatus,
     };
   }
 }

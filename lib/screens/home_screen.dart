@@ -7,6 +7,7 @@ import 'package:fund_management_app/screens/create_group_screen.dart';
 import 'package:fund_management_app/screens/update_profile_screen.dart';
 import 'package:fund_management_app/screens/group_details_screen.dart';
 import 'package:fund_management_app/screens/initial_contribution_screen.dart';
+import 'package:fund_management_app/screens/top_up_screen.dart';
 import 'package:fund_management_app/services/auth_service.dart';
 import 'package:fund_management_app/services/group_service.dart';
 import 'package:fund_management_app/utils/app_constants.dart';
@@ -212,10 +213,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     currentUserBalance = group.memberBalances[currentLoggedInUserEmail] ?? 0.0;
                   }
 
-                  // Check if initial contribution is met
-                  bool hasMetInitialContribution = currentUserBalance >= group.initialContributionAmount;
+                  // --- REVISED CONDITION FOR NAVIGATION (SIMPLIFIED AND MORE ROBUST) ---
+                  // Check for initial contribution: If balance is 0 AND initial contribution is set to > 0
+                  // Use a small epsilon for floating point comparison if exact 0.0 is too strict
+                  bool needsInitialContribution = (group.initialContributionAmount > 0 && currentUserBalance == 0.0);
 
-                  final categoryData = _getCategoryIconAndColor(group.groupCategory);
+                  // Check if current balance is below minimum threshold (only if initial is not needed/done)
+                  bool isBelowMinimumBalance = !needsInitialContribution && currentUserBalance < group.minimumBalanceThreshold;
+                  // --- END REVISED CONDITION ---
+
+                  final categoryData = _getCategoryIconAndColor(group.groupCategory); // Corrected method name
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 15),
@@ -223,26 +230,34 @@ class _HomeScreenState extends State<HomeScreen> {
                     elevation: 3,
                     color: AppColors.cardBackground,
                     child: InkWell(
-                      // IMPORTANT: Make navigation await and trigger setState to ensure rebuild on return
                       onTap: () async {
-                        if (hasMetInitialContribution) {
-                          await Navigator.push( // Await the push
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => GroupDetailsScreen(group: group),
-                            ),
-                          );
-                        } else {
-                          await Navigator.push( // Await the push
+                        if (needsInitialContribution) {
+                          await Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (context) => InitialContributionScreen(group: group),
                             ),
                           );
+                        } else if (isBelowMinimumBalance) {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => TopUpScreen(
+                                group: group,
+                                currentBalance: currentUserBalance,
+                                minimumBalanceThreshold: group.minimumBalanceThreshold,
+                              ),
+                            ),
+                          );
+                        } else {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => GroupDetailsScreen(group: group),
+                            ),
+                          );
                         }
-                        // This setState will trigger a rebuild of the HomeScreen's StreamBuilder
-                        // which will fetch the latest group data (including balances) from Firestore.
-                        setState(() { });
+                        // Removed setState(() {}); from here. StreamBuilder should handle updates.
                       },
                       borderRadius: BorderRadius.circular(15),
                       child: Padding(
@@ -289,12 +304,24 @@ class _HomeScreenState extends State<HomeScreen> {
                                       color: currentUserBalance >= 0 ? AppColors.successGreen : AppColors.errorRed,
                                     ),
                                   ),
-                                  // Display reminder if initial contribution is not met
-                                  if (!hasMetInitialContribution)
+                                  // Display reminders based on status
+                                  if (needsInitialContribution)
                                     Padding(
                                       padding: const EdgeInsets.only(top: 4.0),
                                       child: Text(
                                         'Initial Pay Pending: ₹${group.initialContributionAmount.toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.errorRed,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    )
+                                  else if (isBelowMinimumBalance)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4.0),
+                                      child: Text(
+                                        'Below Min Balance! Add funds to ₹${group.minimumBalanceThreshold.toStringAsFixed(2)}',
                                         style: const TextStyle(
                                           fontSize: 12,
                                           color: AppColors.errorRed,

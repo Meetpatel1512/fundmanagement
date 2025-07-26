@@ -100,14 +100,13 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> with SingleTick
         );
   }
 
-  // NEW METHOD: _buildLoadingOrErrorGroupDetails
+  // Helper method to display loading/error state for GroupDetailsScreen's main stream
   Widget _buildLoadingOrErrorGroupDetails(GroupModel group, String? currentUserUid, bool isAdmin, Map<String, dynamic> categoryData, {dynamic error}) {
     return Scaffold(
       backgroundColor: AppColors.primaryBackground,
       body: SafeArea(
         child: Column(
           children: [
-            // Custom Top Bar Section (simplified for error state)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 15.0),
               color: AppColors.primaryBackground,
@@ -145,7 +144,6 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> with SingleTick
                 ],
               ),
             ),
-            // Error/Loading Indicator
             Expanded(
               child: Center(
                 child: Column(
@@ -181,7 +179,6 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> with SingleTick
           ],
         ),
       ),
-      // Keep FAB for consistency, but might make it non-functional
       floatingActionButton: FloatingActionButton(
         onPressed: () { _showToast("Loading, please wait...", AppColors.hintGrey); },
         backgroundColor: AppColors.hintGrey,
@@ -198,25 +195,28 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> with SingleTick
     final bool isAdmin = currentUserUid == widget.group.creatorUid;
     final categoryData = _getCategoryIconAndColor(widget.group.groupCategory);
 
-    // Calculate Group Total Balance - using a StreamBuilder for real-time updates
+    // Stream group data for real-time updates of memberBalances
     return StreamBuilder<GroupModel>(
       stream: _groupService.getUsersGroups().map((groups) => groups.firstWhere(
             (g) => g.groupId == widget.group.groupId,
-            orElse: () => widget.group, // Fallback to current group if not found (e.g., deleted)
+            orElse: () => widget.group, // Fallback to initial group if not found (e.g., deleted)
           )),
       builder: (context, groupSnapshot) {
-        // If the group data is still loading or has an error, show a fallback
         if (groupSnapshot.connectionState == ConnectionState.waiting) {
-          // Changed to return the new method
           return _buildLoadingOrErrorGroupDetails(widget.group, currentUserUid, isAdmin, categoryData);
         }
         if (groupSnapshot.hasError || !groupSnapshot.hasData) {
-          // Changed to return the new method with error details
           return _buildLoadingOrErrorGroupDetails(widget.group, currentUserUid, isAdmin, categoryData, error: groupSnapshot.error);
         }
 
         final GroupModel currentGroupState = groupSnapshot.data!;
+
+        // Calculate Group Total Balance
         double groupTotalBalance = currentGroupState.memberBalances.values.fold(0.0, (sum, balance) => sum + balance);
+
+        // Get current user's balance for this group
+        double currentUserPersonalBalance = currentGroupState.memberBalances[currentUserEmail] ?? 0.0;
+
 
         return Scaffold(
           backgroundColor: AppColors.primaryBackground,
@@ -288,34 +288,61 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> with SingleTick
                     ],
                   ),
                 ),
-                // Group Total Balance Display
+                // Group Total Balance and Personal Balance Display
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
-                  color: AppColors.cardBackground, // A distinct background for balance
+                  color: AppColors.cardBackground,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Group Total Balance:',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.hintGrey,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      Row( // Group Total
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Group Total:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: AppColors.hintGrey,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            '₹${groupTotalBalance.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: groupTotalBalance >= 0 ? AppColors.successGreen : AppColors.errorRed,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        '₹${groupTotalBalance.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: groupTotalBalance >= 0 ? AppColors.successGreen : AppColors.errorRed,
-                        ),
+                      const SizedBox(height: 8),
+                      Row( // Your Personal Balance
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Your Personal Balance:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: AppColors.hintGrey,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            '₹${currentUserPersonalBalance.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: currentUserPersonalBalance >= 0 ? AppColors.successGreen : AppColors.errorRed,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 10), // Space after balance box
+                const SizedBox(height: 10),
                 // Tab Bar
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
@@ -452,7 +479,6 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> with SingleTick
   }
 
   Widget _buildExpenseTabContent(String? currentUserEmail) {
-    // ... (rest of this method remains unchanged, it already uses widget.group.groupId from the initially passed GroupModel)
     return StreamBuilder<List<ExpenseModel>>(
       stream: _groupService.getExpensesForGroup(widget.group.groupId),
       builder: (context, snapshot) {
@@ -625,21 +651,18 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> with SingleTick
                         Color splitColor;
 
                         if (memberEmail == expense.paidBy) {
-                            // Payer's perspective in pooled fund:
-                            // They paid X amount from the pool, but their share is Y.
-                            // Their balance directly reduces by Y.
-                            // So, this just says they paid and their share was covered.
-                            splitText = '$memberDisplayName paid ₹${expense.amount.toStringAsFixed(2)} (covered share: ₹${shareAmount.toStringAsFixed(2)})';
-                            splitColor = AppColors.successGreen; // Or AppColors.textDark if neutral.
+                          // Payer's perspective in pooled fund:
+                          splitText = '$memberDisplayName paid ₹${expense.amount.toStringAsFixed(2)} (covered own share: ₹${shareAmount.toStringAsFixed(2)})';
+                          splitColor = AppColors.successGreen;
                         } else {
-                            // Non-payer's perspective: their balance decreases by their share.
-                            if (shareAmount > 0) {
-                                splitText = '$memberDisplayName\'s pool share decreases by ₹${shareAmount.toStringAsFixed(2)}';
-                                splitColor = AppColors.errorRed;
-                            } else {
-                                splitText = '$memberDisplayName\'s pool share is unchanged (owes ₹0.00)';
-                                splitColor = AppColors.hintGrey;
-                            }
+                          // Non-payer's perspective: their balance decreases by their share.
+                          if (shareAmount > 0) {
+                            splitText = '$memberDisplayName\'s pool share decreased by ₹${shareAmount.toStringAsFixed(2)}';
+                            splitColor = AppColors.errorRed;
+                          } else {
+                            splitText = '$memberDisplayName\'s pool share is unchanged (owes ₹0.00)';
+                            splitColor = AppColors.hintGrey;
+                          }
                         }
 
 
@@ -647,11 +670,13 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> with SingleTick
                           padding: const EdgeInsets.symmetric(vertical: 2.0),
                           child: Row(
                             children: [
-                              Text(
-                                '• $splitText',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: splitColor,
+                              Expanded( // Ensure text wraps
+                                child: Text(
+                                  '• $splitText',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: splitColor,
+                                  ),
                                 ),
                               ),
                             ],
